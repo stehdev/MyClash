@@ -84,6 +84,9 @@ dns:
   proxy-server-nameserver: *proxyServerDNS
   nameserver: *foreignDNS
   nameserver-policy:
+    # Apple 媒体及共享 CDN 使用代理 DNS
+    'rule-set:apple-music,apple-tvplus,apple-podcasts,itunes': *foreignDNS
+    '+.mzstatic.com': *foreignDNS
     'rule-set:cn': *chinaDNS
   direct-nameserver: *chinaDNS
 
@@ -171,6 +174,26 @@ rule-providers:
     url: 'https://github.com/appshubcc/bett-rules/raw/refs/heads/meta/geo/geosite/apple.mrs'
     path: './ruleset/apple.mrs'
     path-in-bundle: 'geo/geosite/apple.mrs'
+  apple-music:
+    <<: *rule_providers_domain
+    url: 'https://fastly.jsdelivr.net/gh/appshubcc/bett-rules@meta/geo/geosite/apple-music.mrs'
+    path: './ruleset/apple-music.mrs'
+    path-in-bundle: 'geo/geosite/apple-music.mrs'
+  apple-tvplus:
+    <<: *rule_providers_domain
+    url: 'https://fastly.jsdelivr.net/gh/appshubcc/bett-rules@meta/geo/geosite/apple-tvplus.mrs'
+    path: './ruleset/apple-tvplus.mrs'
+    path-in-bundle: 'geo/geosite/apple-tvplus.mrs'
+  apple-podcasts:
+    <<: *rule_providers_domain
+    url: 'https://fastly.jsdelivr.net/gh/appshubcc/bett-rules@meta/geo/geosite/apple-podcasts.mrs'
+    path: './ruleset/apple-podcasts.mrs'
+    path-in-bundle: 'geo/geosite/apple-podcasts.mrs'
+  itunes:
+    <<: *rule_providers_domain
+    url: 'https://fastly.jsdelivr.net/gh/appshubcc/bett-rules@meta/geo/geosite/itunes.mrs'
+    path: './ruleset/itunes.mrs'
+    path-in-bundle: 'geo/geosite/itunes.mrs'
   google:
     <<: *rule_providers_domain
     url: 'https://fastly.jsdelivr.net/gh/appshubcc/bett-rules@meta/geo/geosite/google.mrs'
@@ -362,8 +385,9 @@ proxy-groups:
     default-selected: '美国'
     icon: 'https://fastly.jsdelivr.net/gh/Koolson/Qure@master/IconSet/Color/ChatGPT.png'
 
+  # Apple 媒体策略组，不提供直连选项
   - name: 'Apple'
-    <<: [*group_common_select, *proxies_direct]
+    <<: [*group_common_select, *proxies_default]
     icon: 'https://github.com/Koolson/Qure/raw/master/IconSet/Color/Apple_1.png'
 
   - name: 'Zoom'
@@ -467,6 +491,15 @@ rules:
   # 私有网络直连
   - RULE-SET,private,直连
 
+  # Apple 媒体优先代理；iTunes 和 CDN 与部分 App Store 流量共享
+  - RULE-SET,apple-music,Apple
+  - RULE-SET,apple-tvplus,Apple
+  - RULE-SET,apple-podcasts,Apple
+  - RULE-SET,itunes,Apple
+  - DOMAIN-SUFFIX,mzstatic.com,Apple
+  # 其余 Apple 流量直连
+  - RULE-SET,apple,直连
+
   # 国内直连
   - RULE-SET,geolocation-cn,直连
   - RULE-SET,games_cn,直连 # 已包含 steam 下载域名
@@ -483,7 +516,6 @@ rules:
   - RULE-SET,adblockmihomolite,AdBlock
 
   # 代理规则
-  - RULE-SET,apple,Apple
   - RULE-SET,google,Google
   - RULE-SET,google_ip,Google,no-resolve
   - RULE-SET,ai,AI
