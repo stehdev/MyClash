@@ -51,6 +51,7 @@ const ruleOptionsEnable = {
   生成地区自动选择组: true, // 是否生成地区自动选择策略组
   隐藏地区手动选择组: false, // 是否隐藏地区手动选择策略组
   生成倍率组: true, // 是否生成低倍率/高倍率策略组
+  生成家宽节点组: true, // 是否生成家宽（住宅/原生 IP）节点策略组
   分流组添加所有节点: false, // 是否为分流策略组添加所有节点
   过滤低倍率节点: false, // 是否过滤低倍率节点
   过滤高倍率节点: false, // 是否过滤高倍率节点
@@ -71,12 +72,12 @@ const prefixRules = [
   // 国内直连
   'RULE-SET,geolocation-cn,直连',
   'RULE-SET,games_cn,直连', // 已包含 steam 下载域名
-  'RULE-SET,epicgames,直连',
   'RULE-SET,nvidia_cn,直连',
   'RULE-SET,apple_cn,直连',
   'RULE-SET,microsoft_cn,直连',
   'DOMAIN,fsend.cn,直连',
   'DOMAIN,international-gfe.download.nvidia.com,直连',
+  'DOMAIN-SUFFIX,ctaiot.com,直连',
 ];
 
 // 此处添加自定义节点，填入下方[]内（可选，留空则不生成“自建节点”策略组）
@@ -199,8 +200,19 @@ const rateRegionDefinitions = [
   },
 ];
 
-// 全部策略组定义（地区 + 倍率），统一用于节点匹配与归类
-const allRegionDefinitions = [...regionDefinitions, ...rateRegionDefinitions];
+// 定义家宽（住宅/原生 IP）节点策略组
+const homeRegionName = '家宽节点';
+
+const homeRegionDefinitions = [
+  {
+    name: homeRegionName,
+    regex: /家宽|住宅|原生\s*IP|家庭宽带|\bISP\b|\bRES\b|residential/i,
+    icon: `${iconBaseUrl}Home.svg`,
+  },
+];
+
+// 全部策略组定义（地区 + 倍率 + 家宽），统一用于节点匹配与归类
+const allRegionDefinitions = [...regionDefinitions, ...rateRegionDefinitions, ...homeRegionDefinitions];
 
 // Rule Providers 通用配置
 const ruleProviderCommonDomain = {
@@ -237,12 +249,6 @@ const baseRuleProviders = {
     url: `${ruleSetBaseUrl}geosite/category-games@cn.mrs`,
     path: './ruleset/category-games@cn.mrs',
     'path-in-bundle': 'geo/geosite/category-games@cn.mrs',
-  },
-  epicgames: {
-    ...ruleProviderCommonDomain,
-    url: `${ruleSetBaseUrl}geosite/epicgames.mrs`,
-    path: './ruleset/epicgames.mrs',
-    'path-in-bundle': 'geo/geosite/epicgames.mrs',
   },
   nvidia_cn: {
     ...ruleProviderCommonDomain,
@@ -985,6 +991,7 @@ function createRegionGroup(name, icon, proxies) {
  */
 function buildRegionGroups(filteredProxies, customProxies) {
   const generateRateGroupEnabled = ruleOptionsEnable.生成倍率组;
+  const generateHomeGroupEnabled = ruleOptionsEnable.生成家宽节点组;
 
   const regionGroups = Object.fromEntries(allRegionDefinitions.map(({ name }) => [name, []]));
   const otherProxies = [];
@@ -1003,7 +1010,12 @@ function buildRegionGroups(filteredProxies, customProxies) {
   }
 
   const generatedRegionGroups = allRegionDefinitions
-    .filter((r) => regionGroups[r.name].length > 0 && (generateRateGroupEnabled || !rateRegionDefinitions.includes(r)))
+    .filter(
+      (r) =>
+        regionGroups[r.name].length > 0 &&
+        (generateRateGroupEnabled || !rateRegionDefinitions.includes(r)) &&
+        (generateHomeGroupEnabled || !homeRegionDefinitions.includes(r)),
+    )
     .flatMap((r) => createRegionGroup(r.name, r.icon, regionGroups[r.name]));
 
   if (otherProxies.length > 0) {
@@ -1083,14 +1095,25 @@ function buildFunctionalGroups(filteredProxies, generatedRegionGroups, customize
   const customGroupNames = customGroup ? [customGroup.name] : [];
 
   if (minimalModeEnabled) {
+    const autoSelectGroupEnabled = ruleOptionsEnable.自动选择;
+
+    const finalRuleProviders = { ...baseRuleProviders };
+    if (!blockForeignQuicEnabled) delete finalRuleProviders.cn_additional;
+
     const defaultGroup = {
       ...selectBaseOption,
       name: '默认代理',
-      proxies: allProxiesNames,
+      proxies: [...allProxiesNames, ...(autoSelectGroupEnabled ? ['自动选择'] : [])],
       icon: `${iconBaseUrl}Proxy.svg`,
     };
-    const finalRuleProviders = { ...baseRuleProviders };
-    if (!blockForeignQuicEnabled) delete finalRuleProviders.cn_additional;
+
+    const autoSelectGroup = {
+      ...urlTestBaseOption,
+      name: '自动选择',
+      proxies: allProxiesNames,
+      hidden: true,
+    };
+
     const directGroup = {
       ...selectBaseOption,
       name: '直连',
@@ -1098,15 +1121,17 @@ function buildFunctionalGroups(filteredProxies, generatedRegionGroups, customize
       icon: `${iconBaseUrl}China.svg`,
       hidden: true,
     };
+
     const globalGroup = {
       ...selectBaseOption,
       name: 'GLOBAL',
-      proxies: ['默认代理', ...customGroupNames, '直连'],
+      proxies: ['默认代理', ...customGroupNames, ...(autoSelectGroupEnabled ? [autoSelectGroup.name] : []), '直连'],
       icon: `${iconBaseUrl}Global.svg`,
     };
+
     return {
       globalGroup,
-      functionalGroups: [defaultGroup],
+      functionalGroups: [defaultGroup, ...(autoSelectGroupEnabled ? [autoSelectGroup] : [])],
       functionalRules: [],
       finalRuleProviders,
       directGroup,
@@ -1208,7 +1233,9 @@ const commonDnsList = [
 
   // 腾讯 DNSPod（腾讯云）
   '119.29.29.29',
+  '119.28.28.28',
   '182.254.116.116',
+  '182.254.118.118',
   '1.12.12.12',
   '120.53.53.53',
   '2402:4e00::',
@@ -1220,6 +1247,10 @@ const commonDnsList = [
   // 114DNS（南京信风）
   '114.114.114.114',
   '114.114.115.115',
+  '114.114.114.119',
+  '114.114.115.119',
+  '114.114.114.110',
+  '114.114.115.110',
 
   // 百度 BaiduDNS
   '180.76.76.76',
@@ -1236,14 +1267,38 @@ const commonDnsList = [
   '101.226.4.6',
   '218.30.118.6',
   '123.125.81.6',
+  '140.207.198.6',
   '2400:8800:1::6',
   '2400:8800:2::6',
   'doh.360',
   'dot.360',
+  'dns.360',
 
   // 火山引擎（字节跳动）
   '180.184.1.1',
   '180.184.2.2',
+
+  // OneDNS（微步在线，拦截版/纯净版/家庭版）
+  '117.50.11.11',
+  '117.50.22.22',
+  '52.80.66.66',
+  '117.50.10.10',
+  '52.80.52.52',
+  '117.50.60.30',
+  '52.80.60.30',
+  'onedns.net',
+
+  // 清华大学 TUNA
+  '101.6.6.6',
+  '2001:da8::666',
+
+  // 下一代互联网国家工程中心（IPv6 公共 DNS）
+  '240c::6666',
+  '240c::6644',
+
+  // 中国科学技术大学（教育网防污染）
+  '202.141.162.123',
+  '202.141.178.13',
 
   // ==================== 国外 ====================
 
@@ -1309,8 +1364,6 @@ const commonDnsList = [
   '76.76.10.0',
   '76.76.19.19',
   '76.223.122.150',
-  '2a0d:2a00:1::2',
-  '2a0d:2a00:2::2',
 
   // CleanBrowsing（含安全/家庭版）
   '185.228.168.9',
@@ -1319,6 +1372,8 @@ const commonDnsList = [
   '185.228.169.11',
   '185.228.168.168',
   '185.228.169.168',
+  '2a0d:2a00:1::2',
+  '2a0d:2a00:2::2',
 
   // Yandex DNS
   '77.88.8.8',
